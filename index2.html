@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>迷宮遊戲</title>
+
+<style>
+:root {
+    --bg-color: #f2f4f8;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: var(--bg-color);
+    text-align: center;
+    transition: background 0.3s;
+}
+
+h1 { margin: 12px; }
+
+#menu button {
+    padding: 10px 18px;
+    margin: 6px;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+#exitBtn {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    padding: 6px 14px;
+    z-index: 999;
+    display: none;
+}
+
+#info {
+    font-size: 18px;
+    margin: 8px;
+}
+
+#maze {
+    position: relative;
+    margin: 0 auto 10px;
+    background: #222;
+}
+
+/* 迷宮 */
+.cell { position: absolute; }
+.wall { background: #111; }
+.path { background: #e0e0e0; }
+.goal { background: #2ecc71; }
+
+/* 玩家 & 敵人 */
+.player {
+    position: absolute;
+    background: #3498db;
+    z-index: 10;
+    transition: 0.08s linear;
+}
+
+.enemy {
+    position: absolute;
+    background: #e74c3c;
+    z-index: 9;
+    transition: 0.15s linear;
+}
+
+/* 🎨 背景選擇器 */
+#bgPicker {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    background: rgba(255,255,255,0.7);
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.bg-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid #aaa;
+    cursor: pointer;
+}
+</style>
+</head>
+
+<body>
+
+<h1>迷宮遊戲</h1>
+
+<div id="menu">
+    <button onclick="startGame(false,false,false)">一般模式</button>
+    <button onclick="startGame(true,false,false)">計時模式</button>
+    <button onclick="startGame(false,true,false)">倒計時</button>
+    <button onclick="startGame(false,false,true)">追趕模式</button>
+    <button onclick="startGame(false,true,true)">追趕＋倒計時</button>
+</div>
+
+<button id="exitBtn" onclick="backToMenu()">退出</button>
+
+<!-- 背景選擇 -->
+<div id="bgPicker">
+    <div class="bg-btn" style="background:#f2f4f8" onclick="setBg('#f2f4f8')"></div>
+    <div class="bg-btn" style="background:#eef3f1" onclick="setBg('#eef3f1')"></div>
+    <div class="bg-btn" style="background:#f6f1e7" onclick="setBg('#f6f1e7')"></div>
+    <div class="bg-btn" style="background:#f0eef5" onclick="setBg('#f0eef5')"></div>
+    <div class="bg-btn" style="background:#ededed" onclick="setBg('#ededed')"></div>
+</div>
+
+<div id="info"></div>
+<div id="maze"></div>
+
+<script>
+/* ===== 背景 ===== */
+function setBg(c){
+    document.documentElement.style.setProperty("--bg-color", c);
+}
+
+/* ===== 狀態 ===== */
+let size = 21;
+let cellSize = 28;
+let mazeData = [];
+
+let player = {x:1,y:1};
+let enemy  = {x:1,y:1};
+
+let timed = false;
+let countdown = false;
+let chase = false;
+
+let time = 0;
+let timer = null;
+let enemyTimer = null;
+
+const maze = document.getElementById("maze");
+const info = document.getElementById("info");
+
+/* ===== 鍵盤 ===== */
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+/* ===== 主流程 ===== */
+function startGame(t, c, ch){
+    timed = t;
+    countdown = c;
+    chase = ch;
+
+    time = countdown ? 60 : 0;
+
+    document.getElementById("menu").style.display = "none";
+    document.getElementById("exitBtn").style.display = "block";
+
+    generateMaze();
+    drawMaze();
+    updateInfo();
+
+    if (timed || countdown) {
+        timer = setInterval(() => {
+            time += countdown ? -1 : 1;
+            updateInfo();
+            if (countdown && time <= 0) gameOver("時間到！");
+        }, 1000);
+    }
+
+    if (chase) {
+        enemyTimer = setInterval(moveEnemy, 300);
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+function backToMenu(){
+    clearInterval(timer);
+    clearInterval(enemyTimer);
+    timer = enemyTimer = null;
+    maze.innerHTML = "";
+    info.innerText = "";
+    document.getElementById("menu").style.display = "block";
+    document.getElementById("exitBtn").style.display = "none";
+}
+
+/* ===== 迷宮生成 ===== */
+function generateMaze(){
+    mazeData = Array.from({length:size},()=>Array(size).fill(1));
+
+    function carve(x,y){
+        mazeData[y][x]=0;
+        [[0,2],[2,0],[0,-2],[-2,0]].sort(()=>Math.random()-0.5)
+        .forEach(([dx,dy])=>{
+            const nx=x+dx, ny=y+dy;
+            if(nx>0&&ny>0&&nx<size-1&&ny<size-1&&mazeData[ny][nx]){
+                mazeData[y+dy/2][x+dx/2]=0;
+                carve(nx,ny);
+            }
+        });
+    }
+    carve(1,1);
+
+    player = {x:1,y:1};
+    enemy  = {x:size-2,y:size-2};
+    mazeData[size-2][size-2] = 2;
+}
+
+/* ===== 繪製 ===== */
+function drawMaze(){
+    maze.innerHTML = "";
+    maze.style.width = size*cellSize+"px";
+    maze.style.height = size*cellSize+"px";
+
+    for(let y=0;y<size;y++)
+    for(let x=0;x<size;x++){
+        const d=document.createElement("div");
+        d.className="cell "+(mazeData[y][x]===1?"wall":"path");
+        if(mazeData[y][x]===2) d.classList.add("goal");
+        d.style.cssText=`width:${cellSize}px;height:${cellSize}px;left:${x*cellSize}px;top:${y*cellSize}px`;
+        maze.appendChild(d);
+    }
+
+    maze.appendChild(makeEntity("player"));
+    maze.appendChild(makeEntity("enemy"));
+    updateEntities();
+}
+
+function makeEntity(cls){
+    const d=document.createElement("div");
+    d.className=cls;
+    d.style.width=d.style.height=cellSize+"px";
+    return d;
+}
+
+function updateEntities(){
+    document.querySelector(".player").style.left = player.x*cellSize+"px";
+    document.querySelector(".player").style.top  = player.y*cellSize+"px";
+    document.querySelector(".enemy").style.left  = enemy.x*cellSize+"px";
+    document.querySelector(".enemy").style.top   = enemy.y*cellSize+"px";
+}
+
+/* ===== 玩家移動 ===== */
+function tryMove(dx,dy){
+    const nx=player.x+dx, ny=player.y+dy;
+    if(mazeData[ny][nx]!==1){
+        player.x=nx; player.y=ny;
+        updateEntities();
+        if(mazeData[ny][nx]===2) gameOver("通關成功！");
+    }
+}
+
+/* ===== 敵人追趕（慢速） ===== */
+function moveEnemy(){
+    let dx = Math.sign(player.x - enemy.x);
+    let dy = Math.sign(player.y - enemy.y);
+    if(Math.random()<0.5) dx=0; else dy=0;
+
+    const nx=enemy.x+dx, ny=enemy.y+dy;
+    if(mazeData[ny][nx]!==1){
+        enemy.x=nx; enemy.y=ny;
+        updateEntities();
+    }
+    if(enemy.x===player.x && enemy.y===player.y){
+        gameOver("被抓到了！");
+    }
+}
+
+/* ===== 主循環 ===== */
+function gameLoop(){
+    if(keys["arrowup"]||keys["w"]) tryMove(0,-1);
+    else if(keys["arrowdown"]||keys["s"]) tryMove(0,1);
+    else if(keys["arrowleft"]||keys["a"]) tryMove(-1,0);
+    else if(keys["arrowright"]||keys["d"]) tryMove(1,0);
+    requestAnimationFrame(gameLoop);
+}
+
+function updateInfo(){
+    info.innerText = (timed||countdown) ? `時間：${time} 秒` : "";
+}
+
+function gameOver(msg){
+    alert(msg);
+    backToMenu();
+}
+</script>
+</body>
+</html>
